@@ -1,9 +1,7 @@
-# Datadog Output Plugin
+# Splunk HEC Output Plugin
 
-This plugin writes to the [Datadog Metrics API](http://docs.datadoghq.com/api/#metrics)
-and requires an `apikey` which can be obtained [here](https://app.datadoghq.com/account/settings#api)
-for the account.
+This plugin writes to the [Splunk HEC API](http://dev.splunk.com/view/event-collector/SP-CAAAFDN)
+and requires an `token` which can be obtained by following instructions [here](https://docs.splunk.com/Documentation/Splunk/7.0.1/Metrics/GetMetricsInOther#Get_metrics_in_from_clients_over_HTTP_or_HTTPS)
+for your Splunk Enterprise installation.
 
-If the point value being sent cannot be converted to a float64, the metric is skipped.
-
-Metrics are grouped by converting any `_` characters to `.` in the Point Name.
+If the value being sent cannot be converted to a float64, the metric is skipped.
