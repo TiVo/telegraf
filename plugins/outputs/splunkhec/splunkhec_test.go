@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/influxdata/telegraf/testutil"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestStructure(t *testing.T) {
@@ -20,10 +20,9 @@ func TestStructure(t *testing.T) {
 
 	v, _ := json.Marshal(validResult)
 
-	if hecMs, err := buildMetrics(testutil.MockMetrics()[0], d); err == nil {
-		b, err := json.Marshal(hecMs)
-		if assert.Nil(t, err) {
-			assert.Equal(t, v, b)
-		}
-	}
+	hecMs, err := buildMetrics(testutil.MockMetrics()[0], d)
+    require.NoError(t, err)
+	b, err := json.Marshal(hecMs)
+	require.NoError(t, err)
+	require.Equal(t, v, b)
 }
