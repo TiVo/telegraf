@@ -40,14 +40,16 @@ var sampleConfig = `
   # timeout = "5s"
 `
 
+const redactedAPIKey = "****************"
+
 /* Splunk HEC Structs */
 type HECTimeSeries struct {
-	Time   float64     `json:"time"`
-	Event  string      `json:"event"`
-	Index  string      `json:"index,omitempty"`
-	Source string      `json:"source,omitempty"`
-	Host   string      `json:"host"`
-	Fields interface{} `json:"fields"`
+	Time   float64                `json:"time"`
+	Event  string                 `json:"event"`
+	Index  string                 `json:"index,omitempty"`
+	Source string                 `json:"source,omitempty"`
+	Host   string                 `json:"host"`
+	Fields map[string]interface{} `json:"fields"`
 }
 
 func NewSplunkHEC() *SplunkHEC {
@@ -73,8 +75,6 @@ func (d *SplunkHEC) Connect() error {
 
 func (d *SplunkHEC) Write(metrics []telegraf.Metric) error {
 
-	const redactedApiKey = "****************"
-
 	if len(metrics) == 0 {
 		return nil
 	}
@@ -90,7 +90,7 @@ func (d *SplunkHEC) Write(metrics []telegraf.Metric) error {
 
 	req, err := http.NewRequest("POST", d.Url, strings.NewReader(hecPostData))
 	if err != nil {
-		return fmt.Errorf("unable to create http.Request, %s\n", strings.Replace(err.Error(), d.Token, redactedApiKey, -1))
+		return fmt.Errorf("unable to create http.Request, %s\n", strings.Replace(err.Error(), d.Token, redactedAPIKey, -1))
 	}
 
 	req.Header.Add("Content-Type", "application/json")
@@ -100,7 +100,7 @@ func (d *SplunkHEC) Write(metrics []telegraf.Metric) error {
 
 	resp, err := d.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("error POSTing metrics, %s\n", strings.Replace(err.Error(), d.Token, redactedApiKey, -1))
+		return fmt.Errorf("error POSTing metrics, %s\n", strings.Replace(err.Error(), d.Token, redactedAPIKey, -1))
 	}
 	defer resp.Body.Close()
 
@@ -120,47 +120,33 @@ func (d *SplunkHEC) Description() string {
 	return "Configuration for Splunk HEC to send metrics to.\nDoes not make use of Indexer Acknowledgement"
 }
 
-func buildMetrics(m telegraf.Metric, d *SplunkHEC) (string, error) {
-
-	var metricGroup string
-	dataGroup := HECTimeSeries{}
-	obj := map[string]interface{}{}
-
+func buildMetrics(m telegraf.Metric, d *SplunkHEC) (metricGroup string, err error) {
 	for k, v := range m.Fields() {
-		// Empty out anything in obj since I don't know how golang scoping works...
-		for k, _ := range obj {
-			delete(obj, k)
+		if !verifyValue(v) {
+			continue
 		}
-		dataGroup = HECTimeSeries{}
+		obj := map[string]interface{}{}
 		obj["metric_name"] = m.Name() + "." + k
 		obj["_value"] = v
 
-		dataGroup = HECTimeSeries{
+		dataGroup := HECTimeSeries{
 			Time:   float64(m.Time().UnixNano() / 1000000000),
 			Event:  "metric",
 			Fields: obj,
 		}
 
-		if d.Source != "" {
-			dataGroup.Source = d.Source
-		} else {
+		if d.Source == "" {
 			dataGroup.Source = "telegraf"
+		} else {
+			dataGroup.Source = d.Source
 		}
-		if d.Index != "" {
-			dataGroup.Index = d.Index
-		}
-
-		if !verifyValue(v) {
-			// Reset the dataGroup
-			dataGroup = HECTimeSeries{}
-			continue
-		}
+		dataGroup.Index = d.Index
 
 		// Need to get Host from m.Tags()
 		buildHecTags(m, &dataGroup)
 		b, err := json.Marshal(dataGroup)
 		if err != nil {
-			fmt.Println("error:", err)
+			return metricGroup, err
 		}
 		metricGroup = metricGroup + string(b)
 	}
@@ -169,13 +155,6 @@ func buildMetrics(m telegraf.Metric, d *SplunkHEC) (string, error) {
 }
 
 func buildHecTags(m telegraf.Metric, tsData *HECTimeSeries) {
-
-	obj := map[string]interface{}{}
-
-	// Copy all of the existing fields into a new map
-	for k, v := range tsData.Fields.(map[string]interface{}) {
-		obj[k] = v
-	}
 	/*
 	 ** Iterate tags and copy them into fields{}
 	 ** Check for host in m.Tags() and set in tsData.Host
@@ -184,11 +163,9 @@ func buildHecTags(m telegraf.Metric, tsData *HECTimeSeries) {
 		if k == "host" {
 			tsData.Host = v
 		} else {
-			obj[k] = v
+			tsData.Fields[k] = v
 		}
 	}
-	// Set the updated set of Fields into tsData
-	tsData.Fields = obj
 }
 
 func verifyValue(v interface{}) bool {
