@@ -25,10 +25,10 @@ type SplunkHEC struct {
 
 var sampleConfig = `
   ## Splunk HEC Token (also used for Data Channel ID)
-  token = "my-secret-key" # required.
+  # token = "my-secret-key" # required.
 
   ## Splunk HEC endpoint
-  url = "https://localhost:8088/services/collector" # required.
+  # url = "https://localhost:8088/services/collector" # required.
 
   ## Splunk Index: Must be a metrics index, must be allowed by above token
   # index = "telegraf"
