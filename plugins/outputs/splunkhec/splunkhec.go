@@ -1,8 +1,11 @@
 package splunkhec
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -18,6 +21,7 @@ type SplunkHEC struct {
 	Url    string
 	Index  string
 	Source string
+	Gzip   bool
 
 	Timeout internal.Duration
 	client  *http.Client
@@ -35,6 +39,10 @@ var sampleConfig = `
 
   ## Source: Set the 'source' on the events (defaults to: telegraf)
   # source = "telegraf"
+
+  ## gzip: Determines if we should compress the transport to the HEC (defaults to: false)
+  # This can optimize network throughput at the (slight) expense of CPU
+  # gzip = true
 
   ## Connection timeout.
   # timeout = "5s"
@@ -64,9 +72,14 @@ func (d *SplunkHEC) Connect() error {
 		return fmt.Errorf("url is a required field for Splunk HEC output")
 	}
 
+	log.Printf("D! Use gzip: %t\n", d.Gzip)
+
 	d.client = &http.Client{
 		Transport: &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
+			Proxy:               http.ProxyFromEnvironment,
+			DisableKeepAlives:   false,
+			MaxIdleConnsPerHost: 1024,
+			DisableCompression:  false,
 		},
 		Timeout: d.Timeout.Duration,
 	}
@@ -79,6 +92,10 @@ func (d *SplunkHEC) Write(metrics []telegraf.Metric) error {
 		return nil
 	}
 	var hecPostData string
+	var gzipWriter *gzip.Writer
+	var writer io.Writer
+	var buffer bytes.Buffer
+	var err error
 
 	for _, m := range metrics {
 		if hecMs, err := buildMetrics(m, d); err == nil {
@@ -88,15 +105,40 @@ func (d *SplunkHEC) Write(metrics []telegraf.Metric) error {
 		}
 	}
 
-	req, err := http.NewRequest("POST", d.Url, strings.NewReader(hecPostData))
+	if d.Gzip == true {
+		gzipWriter, err = gzip.NewWriterLevel(&buffer, 6)
+		if err != nil {
+			return fmt.Errorf("gzip.NewWriterLevel(), %s\n", err.Error())
+		}
+		writer = gzipWriter
+	} else {
+		writer = &buffer
+	}
+
+	if _, err := writer.Write([]byte(hecPostData)); err != nil {
+		return fmt.Errorf("writer.Write(), %s\n", err.Error())
+	}
+
+	if d.Gzip == true {
+		err = gzipWriter.Close()
+		if err != nil {
+			return fmt.Errorf("gzipWriter.Close(), %s\n", err.Error())
+		}
+	}
+
+	req, err := http.NewRequest("POST", d.Url, bytes.NewBuffer(buffer.Bytes()))
 	if err != nil {
 		return fmt.Errorf("unable to create http.Request, %s\n", strings.Replace(err.Error(), d.Token, redactedAPIKey, -1))
 	}
 
+	req.Header.Add("Connection", "keep-alive")
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", "Splunk "+d.Token)
 	// Add the Request-Channel header incase Indexer Acknowledgment is enabled.
 	req.Header.Add("X-Splunk-Request-Channel", d.Token)
+	if d.Gzip == true {
+		req.Header.Set("Content-Encoding", "gzip")
+	}
 
 	resp, err := d.client.Do(req)
 	if err != nil {
@@ -107,6 +149,10 @@ func (d *SplunkHEC) Write(metrics []telegraf.Metric) error {
 	if resp.StatusCode < 200 || resp.StatusCode > 209 {
 		body, _ := ioutil.ReadAll(resp.Body)
 		return fmt.Errorf("received bad status code, %d [%s]\n", resp.StatusCode, body)
+	} else {
+		// Need to read the response to make use of keep-alive
+		// Read it to /dev/null since we got a successfull response code
+		io.Copy(ioutil.Discard, resp.Body)
 	}
 
 	return nil
@@ -117,7 +163,7 @@ func (d *SplunkHEC) SampleConfig() string {
 }
 
 func (d *SplunkHEC) Description() string {
-	return "Configuration for Splunk HEC to send metrics to.\nDoes not make use of Indexer Acknowledgement"
+	return "Configuration for Splunk HEC to send metrics to.\n# # Does not make use of Indexer Acknowledgement"
 }
 
 func buildMetrics(m telegraf.Metric, d *SplunkHEC) (metricGroup string, err error) {
