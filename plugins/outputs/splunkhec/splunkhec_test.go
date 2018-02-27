@@ -21,7 +21,7 @@ func TestStructure(t *testing.T) {
 	v, _ := json.Marshal(validResult)
 
 	hecMs, err := buildMetrics(testutil.MockMetrics()[0], d)
-    require.NoError(t, err)
+	require.NoError(t, err)
 	b, err := json.Marshal(hecMs)
 	require.NoError(t, err)
 	require.Equal(t, v, b)

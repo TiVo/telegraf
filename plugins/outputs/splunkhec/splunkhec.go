@@ -3,6 +3,7 @@ package splunkhec
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,11 +18,12 @@ import (
 )
 
 type SplunkHEC struct {
-	Token  string
-	Url    string
-	Index  string
-	Source string
-	Gzip   bool
+	Token     string
+	Url       string
+	Index     string
+	Source    string
+	Gzip      bool
+	IgnoreSSL bool
 
 	Timeout internal.Duration
 	client  *http.Client
@@ -43,6 +45,10 @@ var sampleConfig = `
   ## gzip: Determines if we should compress the transport to the HEC (defaults to: false)
   # This can optimize network throughput at the (slight) expense of CPU
   # gzip = true
+
+  ## Ignore SSL certificate validation (defaults to: false)
+  # Use this for certs from untrusted CAs, bad names, etc.
+  # ignoreSSL = true
 
   ## Connection timeout.
   # timeout = "5s"
@@ -73,6 +79,7 @@ func (d *SplunkHEC) Connect() error {
 	}
 
 	log.Printf("D! Use gzip: %t\n", d.Gzip)
+	log.Printf("D! Ignore SSL Validation: %t\n", d.IgnoreSSL)
 
 	d.client = &http.Client{
 		Transport: &http.Transport{
@@ -80,6 +87,7 @@ func (d *SplunkHEC) Connect() error {
 			DisableKeepAlives:   false,
 			MaxIdleConnsPerHost: 1024,
 			DisableCompression:  false,
+			TLSClientConfig:     &tls.Config{InsecureSkipVerify: d.IgnoreSSL},
 		},
 		Timeout: d.Timeout.Duration,
 	}
