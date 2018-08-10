@@ -31,25 +31,24 @@ func (k *Meminfo) Gather(acc telegraf.Accumulator) error {
 		return err
 	}
 
-    data = bytes.TrimRight(data,"\n")
-    // Get rid of the :'s
-    data = bytes.Replace(data,[]byte(":"),[]byte(""),-1)
-    // Get rid of the kB's
-    data = bytes.Replace(data,[]byte("kB"),[]byte(""),-1)
-    // Change ('s to _'s
-    data = bytes.Replace(data,[]byte("("),[]byte("_"),-1)
-    // Get rid of the )'s
-    data = bytes.Replace(data,[]byte(")"),[]byte(""),-1)
+	data = bytes.TrimRight(data, "\n")
+	// Get rid of the :'s
+	data = bytes.Replace(data, []byte(":"), []byte(""), -1)
+	// Get rid of the kB's
+	data = bytes.Replace(data, []byte("kB"), []byte(""), -1)
+	// Change ('s to _'s
+	data = bytes.Replace(data, []byte("("), []byte("_"), -1)
+	// Get rid of the )'s
+	data = bytes.Replace(data, []byte(")"), []byte(""), -1)
 
-    dataFields := bytes.Fields(data)
-
-	fields := make(map[string]interface{})
+	dataFields := bytes.Fields(data)
 
 	for i, field := range dataFields {
 
 		// dataFields is an array of {"stat1_name", "stat1_value", "stat2_name",
 		// "stat2_value", ...}
 		// We only want the even number index as that contain the stat name.
+
 		if i%2 == 0 {
 			// Convert the stat value into an integer.
 			m, err := strconv.ParseInt(string(dataFields[i+1]), 10, 64)
@@ -57,19 +56,16 @@ func (k *Meminfo) Gather(acc telegraf.Accumulator) error {
 				return err
 			}
 
-			fields[string(field)] = int64(m)
+			acc.AddGauge("meminfo", map[string]interface{}{string(field): int64(m)}, nil)
 		}
 	}
 
-	acc.AddFields("meminfo", fields, map[string]string{})
 	return nil
 }
 
 func (k *Meminfo) getMeminfo() ([]byte, error) {
 	if _, err := os.Stat(k.statFile); os.IsNotExist(err) {
-		return nil, fmt.Errorf("meminfo: %s does not exist!", k.statFile)
-	} else if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("E! meminfo: %s does not exist!", k.statFile)
 	}
 
 	data, err := ioutil.ReadFile(k.statFile)
